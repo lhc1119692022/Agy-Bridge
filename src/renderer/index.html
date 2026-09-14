@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agy Bridge</title>
+  <link rel="icon" type="image/png" href="./logo.png" />
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <aside>
+    <div class="brand">
+      <img class="brand-logo" src="./logo.png" alt="Agy Bridge" />
+      <div>
+        <strong>Agy Bridge</strong>
+        <span>注入器 + 本地中转站</span>
+      </div>
+    </div>
+    <nav>
+      <button type="button" data-view="upstreams" class="active">上游</button>
+      <button type="button" data-view="inject">注入器</button>
+      <button type="button" data-view="local">本地引擎</button>
+      <button type="button" data-view="settings">设置</button>
+      <button type="button" data-view="logs">日志</button>
+    </nav>
+    <div class="status-board" id="aside-status"></div>
+  </aside>
+  <main>
+    <section id="view-upstreams" class="view">
+      <header class="page-header">
+        <div>
+          <h1>上游</h1>
+          <p>第三方 generateContent 中转站和本地 CLIProxyAPI 并列，注入器只选其中一个。</p>
+        </div>
+        <button type="button" id="add-upstream" class="primary">添加远程中转站</button>
+      </header>
+      <div id="upstream-list" class="cards"></div>
+    </section>
+
+    <section id="view-inject" class="view hidden">
+      <header class="page-header">
+        <div>
+          <h1>注入器</h1>
+          <p>勾选模型后，用右侧队列调整 Antigravity 里的显示顺序。</p>
+        </div>
+        <div class="row">
+          <button type="button" id="start-injector" class="primary">启动注入器</button>
+          <button type="button" id="stop-injector">停止注入器</button>
+        </div>
+      </header>
+      <div id="inject-panel"></div>
+    </section>
+
+    <section id="view-local" class="view hidden">
+      <header class="page-header">
+        <div>
+          <h1>本地引擎</h1>
+          <p>你只需提供项目文件夹。中转站 URL 和客户端 Key 会从该目录的 config.yaml 自动读取；管理端登录仍在 CLIProxyAPI 自己的页面里。</p>
+        </div>
+      </header>
+      <div class="model-grid">
+        <div class="panel form">
+          <div class="field-head"><span>管理 CLIProxyAPI</span></div>
+          <p class="hint">启动服务、登录管理页、添加账号。这里用的是管理密钥，不是下面的客户端 Key。</p>
+          <div id="cliproxy-accounts"></div>
+          <label>项目文件夹
+            <div class="row">
+              <input id="cliproxy-dir" placeholder="例如 D:\CLIProxyAPI" />
+              <button type="button" id="pick-cliproxy">浏览</button>
+              <button type="button" id="detect-cliproxy">自动查找</button>
+            </div>
+          </label>
+          <p class="hint" id="cliproxy-detected"></p>
+          <div class="row wrap">
+            <button type="button" id="start-local" class="primary">启动 CLIProxyAPI</button>
+            <button type="button" id="stop-local">停止</button>
+            <button type="button" id="open-management">打开管理页</button>
+            <button type="button" id="login-local">添加 Antigravity 账号</button>
+          </div>
+        </div>
+        <div class="panel form">
+          <div class="field-head"><span>作为中转站使用</span></div>
+          <p class="hint">URL 和客户端 Key 来自项目 config.yaml 的 port / api-keys，不会使用管理端密码。</p>
+          <p id="cliproxy-usage" class="meta"></p>
+          <div class="row wrap">
+            <button type="button" id="save-cliproxy" class="primary">拉模型</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-settings" class="view hidden">
+      <header class="page-header">
+        <div>
+          <h1>设置</h1>
+          <p>系统代理用于 Antigravity 刷新 Google OAuth。不填则自动读取 Windows「系统代理」。127.0.0.1 不会走代理。</p>
+        </div>
+      </header>
+      <div class="panel form">
+        <label class="check"><input id="proxy-enabled" type="checkbox" /> 启用自定义代理</label>
+        <label>代理 URL <input id="proxy-url" placeholder="http://127.0.0.1:7890" /></label>
+        <label>Antigravity IDE 路径（可空，自动检测）
+          <div class="row">
+            <input id="ide-path" />
+            <button type="button" id="pick-ide">浏览</button>
+          </div>
+        </label>
+        <label>Antigravity 应用路径（可空，自动检测）
+          <div class="row">
+            <input id="app-path" />
+            <button type="button" id="pick-app">浏览</button>
+          </div>
+        </label>
+        <button type="button" id="save-settings" class="primary">保存设置</button>
+      </div>
+    </section>
+
+    <section id="view-logs" class="view hidden">
+      <header class="page-header">
+        <div>
+          <h1>日志</h1>
+          <p>注入器、CLIProxyAPI 和启动过程都会写到这里。</p>
+        </div>
+      </header>
+      <pre id="log-view" class="log"></pre>
+    </section>
+  </main>
+
+  <dialog id="upstream-dialog">
+    <form method="dialog" id="upstream-form">
+      <h2 id="dialog-title">添加远程中转站</h2>
+      <input type="hidden" id="u-id" />
+      <label>名称 <input id="u-name" required placeholder="例如 Packy / 自建网关" /></label>
+      <label>Base URL <input id="u-url" required placeholder="https://example.com 或 https://example.com/v1beta" /></label>
+      <label>API Key <input id="u-key" required /></label>
+      <div class="field">
+        <div class="field-head">
+          <span>模型列表</span>
+          <span class="hint" id="u-model-count">0 个</span>
+        </div>
+        <div id="u-model-chips" class="chip-list"></div>
+        <div class="row">
+          <input id="u-model-add" placeholder="输入模型 ID，回车添加" />
+          <button type="button" id="u-model-add-btn">添加</button>
+        </div>
+        <p class="hint">每个模型单独添加。也可以先保存，再在卡片上点「拉模型」从上游同步。</p>
+      </div>
+      <div class="row dialog-actions">
+        <button type="submit" value="cancel">取消</button>
+        <button type="submit" id="u-save" class="primary" value="default">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="./app.js"></script>
+</body>
+</html>

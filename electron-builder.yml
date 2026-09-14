@@ -1,0 +1,18 @@
+appId: local.agy-bridge
+productName: Agy Bridge
+directories:
+  output: out
+files:
+  - dist/**/*
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+    - portable
+  artifactName: AgyBridge-${version}-win-${arch}.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeaderIcon: build/icon.ico

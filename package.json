@@ -1,0 +1,30 @@
+{
+  "name": "agy-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron shell that injects generateContent upstreams into Antigravity, with CLIProxyAPI as the local engine.",
+  "type": "module",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.mjs",
+    "start": "npm run build && electron .",
+    "dev": "npm start",
+    "test": "vitest run",
+    "sync:relay": "node scripts/sync-relay-antigravity.mjs",
+    "typecheck": "tsc --noEmit",
+    "package:win": "npm run build && electron-builder --win --config electron-builder.yml"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "undici": "^7.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.4",
+    "electron": "^37.3.1",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.8.2",
+    "vitest": "^3.2.4"
+  }
+}
