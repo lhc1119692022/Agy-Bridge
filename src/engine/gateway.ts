@@ -36,6 +36,11 @@ const HELPER_ROUTE_POLICIES = new Map<string, 'launch' | 'launch-or-active'>([
   ['gemini-2.5-flash-lite', 'launch'],
   ['gemini-3-flash-agent', 'launch'],
   ['gemini-3.1-flash-lite', 'launch'],
+  ['gemini-3.5-flash-lite', 'launch'],
+  ['models/proactive-observer', 'launch-or-active'],
+  ['models/proactive-observer-v10', 'launch-or-active'],
+  ['proactive-observer', 'launch-or-active'],
+  ['proactive-observer-v10', 'launch-or-active'],
 ]);
 
 function respondJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -131,7 +136,7 @@ export async function startInjectorGateway(
   routes: AntigravityRoute[],
   opts: GatewayOptions = {},
 ): Promise<GatewayHandle> {
-  const templateKey = opts.templateKey ?? 'gemini-3.5-flash-low';
+  const templateKey = opts.templateKey ?? 'gemini-3.8-flash-high';
   const log = opts.logFn ?? (() => {});
   const fetchImpl = opts.fetchImpl ?? ((url, init) => fetch(url, init));
 

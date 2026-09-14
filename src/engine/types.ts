@@ -58,6 +58,8 @@ export interface CatalogModelEntry {
   modelProvider?: string;
   tokenizerType?: string;
   supportsImages?: boolean;
+  supportsVideo?: boolean;
+  supportedMimeTypes?: Record<string, boolean>;
   supportsThinking?: boolean;
   thinkingBudget?: number;
   recommended?: boolean;

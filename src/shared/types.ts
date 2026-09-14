@@ -113,6 +113,6 @@ export const DEFAULT_CONFIG: AppConfig = {
   antigravity: {
     appPath: '',
     idePath: '',
-    target: 'ide',
+    target: 'app',
   },
 };

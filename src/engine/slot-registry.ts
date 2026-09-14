@@ -1,4 +1,4 @@
-/** Synced from relay-ai `src/antigravity/slot-registry.ts`. Update with that project. */
+/** Native Cloud Code slots for Antigravity 2.0 v2.13.0. Recapture from daily-cloudcode-pa when the app catalog changes. */
 import type { CatalogFixture } from './types.js';
 
 export type AgySlotStatus = 'validated' | 'reserved' | 'candidate' | 'unsafe';
@@ -38,26 +38,68 @@ export interface AgySwitchCompatibility {
 }
 
 export const AGY_SLOT_VALIDATION_SOURCE =
-  'AGY CLI 1.0.10 / Antigravity IDE 2.1.1 fixture capture 2026-06-23';
+  'Antigravity 2.0 v2.13.0 / daily-cloudcode-pa fetchAvailableModels capture 2026-09-14';
 
 const AGY_NATIVE_SLOT_REGISTRY: AgySlotDefinition[] = [
   {
-    slotId: 'gemini-3.5-flash-low',
-    model: 'MODEL_PLACEHOLDER_M20',
+    slotId: 'gemini-3.8-flash-high',
+    model: 'MODEL_PLACEHOLDER_M318',
     role: 'agent-switch',
     status: 'validated',
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
   },
   {
-    slotId: 'gemini-3.5-flash-extra-low',
-    model: 'MODEL_PLACEHOLDER_M187',
+    slotId: 'gemini-3.8-flash-medium',
+    model: 'MODEL_PLACEHOLDER_M319',
     role: 'agent-switch',
     status: 'validated',
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
   },
   {
-    slotId: 'gemini-3.1-pro-low',
-    model: 'MODEL_PLACEHOLDER_M36',
+    slotId: 'gemini-3.8-flash-low',
+    model: 'MODEL_PLACEHOLDER_M320',
+    role: 'agent-switch',
+    status: 'validated',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+  },
+  {
+    slotId: 'gemini-3.7-flash-high',
+    model: 'MODEL_PLACEHOLDER_M298',
+    role: 'agent-switch',
+    status: 'validated',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+  },
+  {
+    slotId: 'gemini-3.7-flash-medium',
+    model: 'MODEL_PLACEHOLDER_M299',
+    role: 'agent-switch',
+    status: 'validated',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+  },
+  {
+    slotId: 'gemini-3.7-flash-low',
+    model: 'MODEL_PLACEHOLDER_M300',
+    role: 'agent-switch',
+    status: 'validated',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+  },
+  {
+    slotId: 'gemini-3.6-flash-high',
+    model: 'MODEL_PLACEHOLDER_M71',
+    role: 'agent-switch',
+    status: 'validated',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+  },
+  {
+    slotId: 'gemini-3.6-flash-medium',
+    model: 'MODEL_PLACEHOLDER_M72',
+    role: 'agent-switch',
+    status: 'validated',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+  },
+  {
+    slotId: 'gemini-3.6-flash-low',
+    model: 'MODEL_PLACEHOLDER_M73',
     role: 'agent-switch',
     status: 'validated',
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
@@ -65,6 +107,13 @@ const AGY_NATIVE_SLOT_REGISTRY: AgySlotDefinition[] = [
   {
     slotId: 'gemini-pro-agent',
     model: 'MODEL_PLACEHOLDER_M16',
+    role: 'agent-switch',
+    status: 'validated',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+  },
+  {
+    slotId: 'gemini-3.1-pro-low',
+    model: 'MODEL_PLACEHOLDER_M36',
     role: 'agent-switch',
     status: 'validated',
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
@@ -92,11 +141,11 @@ const AGY_NATIVE_SLOT_REGISTRY: AgySlotDefinition[] = [
   },
   {
     slotId: 'gemini-3-flash-agent',
-    model: 'MODEL_PLACEHOLDER_M132',
+    model: 'MODEL_PLACEHOLDER_M84',
     role: 'cascade-plan',
     status: 'reserved',
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
-    notes: 'Visible in agentModelSorts, but reserved for cascade plan construction.',
+    notes: 'Reserved for cascade plan construction. Not in the 2.13.0 Recommended picker.',
   },
   {
     slotId: 'gemini-2.5-flash',
@@ -113,12 +162,28 @@ const AGY_NATIVE_SLOT_REGISTRY: AgySlotDefinition[] = [
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
   },
   {
+    slotId: 'gemini-3.5-flash-low',
+    model: 'MODEL_PLACEHOLDER_M20',
+    role: 'agent-switch',
+    status: 'candidate',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+    notes: 'Present in 2.13.0 catalog but not in Recommended picker.',
+  },
+  {
+    slotId: 'gemini-3.5-flash-extra-low',
+    model: 'MODEL_PLACEHOLDER_M187',
+    role: 'agent-switch',
+    status: 'candidate',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+    notes: 'Present in 2.13.0 catalog but not in Recommended picker.',
+  },
+  {
     slotId: 'gemini-3.1-pro-high',
     model: 'MODEL_PLACEHOLDER_M37',
     role: 'agent-switch',
     status: 'candidate',
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
-    notes: 'Model-shaped fixture entry; requires live switching proof before promotion.',
+    notes: 'Deprecated in favor of gemini-pro-agent; requires live switching proof before promotion.',
   },
   {
     slotId: 'gemini-2.5-pro',
@@ -159,6 +224,38 @@ const AGY_NATIVE_SLOT_REGISTRY: AgySlotDefinition[] = [
     status: 'candidate',
     validatedWith: AGY_SLOT_VALIDATION_SOURCE,
     notes: 'Image generation slot; not switch-safe without live proof.',
+  },
+  {
+    slotId: 'gemini-3.5-flash-lite',
+    model: 'MODEL_PLACEHOLDER_M198',
+    role: 'cascade-checkpoint',
+    status: 'candidate',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+    notes: '2.13.0 mquery/commit helper; route as helper until live proof exists.',
+  },
+  {
+    slotId: 'gemini-3.8-flash-tiered',
+    model: 'MODEL_PLACEHOLDER_M322',
+    role: 'unknown',
+    status: 'candidate',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+    notes: 'Tiered catalog entry; not in Recommended picker.',
+  },
+  {
+    slotId: 'gemini-3.7-flash-tiered',
+    model: 'MODEL_PLACEHOLDER_M301',
+    role: 'unknown',
+    status: 'candidate',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+    notes: 'Tiered catalog entry; not in Recommended picker.',
+  },
+  {
+    slotId: 'gemini-3.6-flash-tiered',
+    model: 'MODEL_PLACEHOLDER_M196',
+    role: 'unknown',
+    status: 'candidate',
+    validatedWith: AGY_SLOT_VALIDATION_SOURCE,
+    notes: 'Tiered catalog entry; not in Recommended picker.',
   },
   {
     slotId: 'tab_jump_flash_lite_preview',

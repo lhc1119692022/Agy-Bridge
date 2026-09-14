@@ -1,11 +1,13 @@
-/** Synced from relay-ai `src/antigravity/catalog.ts`. Update with that project. */
+/** Catalog injection for Antigravity 2.0. Slot IDs/enums come from the 2.13.0 Cloud Code capture. */
 import type { AntigravityRoute, CatalogFixture, CatalogModelEntry, ResolvedFavorite } from './types.js';
 import {
   getValidatedAgySwitchSlots,
   validateAgySlotRegistry,
   type AgySlotValidationResult,
 } from './slot-registry.js';
+import { applyMultimodalCapabilities } from './media.js';
 import catalogFixtureRaw from './fixtures/fetchAvailableModels.json' with { type: 'json' };
+import listExperimentsRaw from './fixtures/listExperiments.json' with { type: 'json' };
 
 /** Antigravity switch-slot cap — keep in sync with relay-ai MAX_MODEL_CATALOG. */
 const MAX_MODEL_CATALOG = 20;
@@ -14,11 +16,11 @@ export function maxSwitchSlots(): number {
   return getValidatedAgySwitchSlots(catalogFixtureRaw as unknown as CatalogFixture).length;
 }
 
-/** Current Antigravity IDE flash-agent enum from fetchAvailableModels. */
-export const RELAY_CASCADE_PLAN_MODEL = 'MODEL_PLACEHOLDER_M132';
+/** Current Antigravity 2.13.0 flash-agent enum from fetchAvailableModels. */
+export const RELAY_CASCADE_PLAN_MODEL = 'MODEL_PLACEHOLDER_M84';
 
-/** Current Antigravity IDE default agent enum from fetchAvailableModels. */
-export const RELAY_AGENT_PLACEHOLDER = 'MODEL_PLACEHOLDER_M20';
+/** Current Antigravity 2.13.0 default agent enum from fetchAvailableModels. */
+export const RELAY_AGENT_PLACEHOLDER = 'MODEL_PLACEHOLDER_M318';
 
 /** Current checkpointer model enum from captured modelExperiments. */
 const RELAY_CASCADE_CHECKPOINT_MODEL = 'MODEL_PLACEHOLDER_M50';
@@ -27,7 +29,7 @@ const RELAY_CASCADE_CHECKPOINT_MODEL = 'MODEL_PLACEHOLDER_M50';
 const RELAY_CASCADE_INTENT_MODEL = 'MODEL_GOOGLE_GEMINI_2_5_FLASH';
 
 /** Fixture key for the hidden default agent anchor. */
-export const RELAY_CASCADE_ANCHOR_ID = 'gemini-3.5-flash-low';
+export const RELAY_CASCADE_ANCHOR_ID = 'gemini-3.8-flash-high';
 
 /** Fixture key for the hidden flash-agent anchor. */
 export const RELAY_CASCADE_PLAN_ANCHOR_ID = 'gemini-3-flash-agent';
@@ -199,7 +201,7 @@ export function buildRelayCatalogEntry(
   entry.modelVersion = route.catalogId;
   entry.modelVersionId = route.catalogId;
   entry.quotaInfo = { remainingFraction: 1, resetTime: '2026-06-23T02:00:57Z' };
-  return applyRouteContextBounds(entry, route);
+  return applyMultimodalCapabilities(applyRouteContextBounds(entry, route));
 }
 
 function buildRelayCatalogSlotEntry(
@@ -214,7 +216,7 @@ function buildRelayCatalogSlotEntry(
   delete entry.modelVersion;
   delete entry.modelVersionId;
   delete entry.isInternal;
-  return applyRouteContextBounds(entry, route);
+  return applyMultimodalCapabilities(applyRouteContextBounds(entry, route));
 }
 
 /**
@@ -274,14 +276,6 @@ export function injectRelayModels(
         }],
       },
     ];
-    for (const entry of Object.values(result.models)) {
-      const mimeTypes = entry.supportedMimeTypes;
-      if (!mimeTypes || typeof mimeTypes !== 'object' || Array.isArray(mimeTypes)) continue;
-      entry.supportedMimeTypes = Object.fromEntries(
-        Object.entries(mimeTypes).filter(([mime]) => !mime.toLowerCase().includes('audio/')),
-      );
-    }
-    result.audioTranscriptionModelIds = [];
     return result;
   }
 
@@ -501,24 +495,7 @@ export function buildListModelConfigsResponse(
   };
 }
 
-const CURRENT_EXPERIMENT_IDS = [
-  105979552, 105979574, 106015351, 105979579, 105867471, 105979530, 105995634,
-  106121401, 106100625, 104638466, 101868197, 104817729, 105695344, 106064591,
-  104913215, 106324349, 106309078, 105821930, 104922093, 103012598, 106143956,
-  105856899, 106312323, 106064030, 105746183, 105757908, 104892493, 105822886,
-  105785683, 105721273, 105897325, 105658071, 106240758, 105943702, 106106760,
-  106283618, 105620019, 106038160, 106309520, 106281951, 106264532, 106222835,
-  106094629, 105887313, 105849474, 106032303, 106228452, 106113900, 106121607,
-  105979531, 105979553, 106015328, 105867469, 105979517, 106121399, 106100654,
-  104638459, 101551624, 104673683, 105695346, 106064590, 104913210, 105821928,
-  104922082, 103012592, 106064028, 105746181, 104892490, 105822881, 105721268,
-  105895316, 105658068, 106240748, 105943694, 106283614, 105620012, 106038153,
-  105887311, 106032301, 106113877, 106121604,
-] as const;
-
-/** Current Antigravity IDE listExperiments response shape. */
+/** Current Antigravity 2.13.0 listExperiments response, including flags. */
 export function buildListExperimentsResponse(): Record<string, unknown> {
-  return {
-    experimentIds: [...CURRENT_EXPERIMENT_IDS],
-  };
+  return structuredClone(listExperimentsRaw as Record<string, unknown>);
 }

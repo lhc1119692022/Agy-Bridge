@@ -1,3 +1,5 @@
+import { rewriteRequestMedia } from './media.js';
+
 /** Cloud Code envelope ↔ Gemini generateContent. */
 
 export interface GeminiNativeUpstream {
@@ -41,7 +43,7 @@ export function geminiGenerateUrl(baseUrl: string, modelId: string, stream: bool
 
 export function cloudCodeToGeminiBody(parsed: CloudCodeEnvelope): Record<string, unknown> {
   const request = (parsed.request && typeof parsed.request === 'object')
-    ? { ...parsed.request }
+    ? rewriteRequestMedia({ ...parsed.request })
     : {};
   if (!request.safetySettings) {
     request.safetySettings = DEFAULT_SAFETY_SETTINGS;

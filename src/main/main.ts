@@ -67,6 +67,7 @@ function createTray(): void {
     { label: '打开 Agy Bridge', click: () => createWindow() },
     { type: 'separator' },
     { label: '启动注入器', click: () => runtime.startInjector().catch(err => runtime.log(String(err))) },
+    { label: '启动 Antigravity 应用', click: () => runtime.launchTarget('app').catch(err => runtime.log(String(err))) },
     { label: '启动 Antigravity IDE', click: () => runtime.launchTarget('ide').catch(err => runtime.log(String(err))) },
     { type: 'separator' },
     { label: '退出', click: () => { isQuitting = true; app.quit(); } },

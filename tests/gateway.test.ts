@@ -51,8 +51,8 @@ describe('injector gateway', () => {
     });
     const body = await res.json() as { defaultAgentModelId: string; models: Record<string, { displayName: string }> };
     expect(res.status).toBe(200);
-    expect(body.defaultAgentModelId).toBe('gemini-3.5-flash-low');
-    expect(body.models['gemini-3.5-flash-low']?.displayName).toContain('Gemini 3 Pro');
+    expect(body.defaultAgentModelId).toBe('gemini-3.8-flash-high');
+    expect(body.models['gemini-3.8-flash-high']?.displayName).toContain('Gemini 3 Pro');
   });
 
   it('forwards generateContent to the Gemini native upstream and wraps the response', async () => {
@@ -79,7 +79,7 @@ describe('injector gateway', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        model: 'gemini-3.5-flash-low',
+        model: 'gemini-3.8-flash-high',
         request: { contents: [{ role: 'user', parts: [{ text: 'ping' }] }] },
       }),
     });
@@ -89,5 +89,87 @@ describe('injector gateway', () => {
     expect(seen[0]?.url).toContain('/v1beta/models/gemini-3-pro:generateContent');
     expect(seen[0]?.body.contents[0].parts[0].text).toBe('ping');
     expect(seen[0]?.headers.authorization).toBe('Bearer test-key');
+  });
+
+  it('advertises video and audio MIME types to Antigravity', async () => {
+    const handle = await startInjectorGateway([route('http://127.0.0.1:9')]);
+    handles.push(handle);
+    const res = await fetch(`${handle.url}/v1internal:fetchAvailableModels`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    const body = await res.json() as {
+      models: Record<string, { supportsVideo?: boolean; supportedMimeTypes?: Record<string, boolean> }>;
+      audioTranscriptionModelIds?: string[];
+    };
+    const slot = body.models['gemini-3.8-flash-high'];
+    expect(slot?.supportsVideo).toBe(true);
+    expect(slot?.supportedMimeTypes?.['video/mp4']).toBe(true);
+    expect(slot?.supportedMimeTypes?.['audio/mpeg']).toBe(true);
+    expect(body.audioTranscriptionModelIds).toContain('models/proactive-observer-v10');
+  });
+
+  it('forwards video and remapped audio parts to the Gemini native upstream', async () => {
+    const seen: { body: any }[] = [];
+    const upstream = await listen((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on('data', chunk => chunks.push(Buffer.from(chunk)));
+      req.on('end', () => {
+        seen.push({ body: JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({
+          candidates: [{ content: { role: 'model', parts: [{ text: 'seen' }] }, finishReason: 'STOP' }],
+        }));
+      });
+    });
+
+    const handle = await startInjectorGateway([route(upstream.url)]);
+    handles.push(handle);
+    const res = await fetch(`${handle.url}/v1internal:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'gemini-3.8-flash-high',
+        request: {
+          contents: [{
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: 'video/mp4', data: 'AAAA' } },
+              { inlineData: { mimeType: 'video/audio/wav', data: 'BBBB' } },
+            ],
+          }],
+        },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen[0]?.body.contents[0].parts).toEqual([
+      { inlineData: { mimeType: 'video/mp4', data: 'AAAA' } },
+      { inlineData: { mimeType: 'audio/wav', data: 'BBBB' } },
+    ]);
+  });
+
+  it('routes Cloud Code audio transcription models through the launch route', async () => {
+    const seen: { url: string }[] = [];
+    const upstream = await listen((req, res) => {
+      seen.push({ url: req.url ?? '' });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        candidates: [{ content: { role: 'model', parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+      }));
+    });
+
+    const handle = await startInjectorGateway([route(upstream.url)]);
+    handles.push(handle);
+    const res = await fetch(`${handle.url}/v1internal:generateContent`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        model: 'models/proactive-observer-v10',
+        request: { contents: [{ role: 'user', parts: [{ inlineData: { mimeType: 'audio/wav', data: 'AA' } }] }] },
+      }),
+    });
+    expect(res.status).toBe(200);
+    expect(seen[0]?.url).toContain('/v1beta/models/gemini-3-pro:generateContent');
   });
 });

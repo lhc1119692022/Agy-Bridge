@@ -34,6 +34,28 @@ describe('gemini native mapping', () => {
     expect(body.safetySettings).toBeTruthy();
   });
 
+  it('rewrites Antigravity media MIME aliases without copying inline payloads', () => {
+    const data = 'AAAA';
+    const body = cloudCodeToGeminiBody({
+      request: {
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: 'watch' },
+            { inlineData: { mimeType: 'video/mp4', data } },
+            { inlineData: { mimeType: 'video/audio/wav', data } },
+            { fileData: { mimeType: 'audio/webm;codecs=opus', fileUri: 'file://clip.webm' } },
+          ],
+        }],
+      },
+    });
+    const parts = (body.contents as any)[0].parts;
+    expect(parts[1].inlineData).toEqual({ mimeType: 'video/mp4', data });
+    expect(parts[2].inlineData).toEqual({ mimeType: 'audio/wav', data });
+    expect(parts[2].inlineData.data).toBe(data);
+    expect(parts[3].fileData.mimeType).toBe('audio/webm');
+  });
+
   it('wraps Gemini payloads as Cloud Code responses', () => {
     const wrapped = wrapGeminiAsCloudCode({
       candidates: [{ content: { role: 'model', parts: [{ text: 'ok' }] } }],
