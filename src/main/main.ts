@@ -67,8 +67,7 @@ function createTray(): void {
     { label: '打开 Agy Bridge', click: () => createWindow() },
     { type: 'separator' },
     { label: '启动注入器', click: () => runtime.startInjector().catch(err => runtime.log(String(err))) },
-    { label: '启动 Antigravity 应用', click: () => runtime.launchTarget('app').catch(err => runtime.log(String(err))) },
-    { label: '启动 Antigravity IDE', click: () => runtime.launchTarget('ide').catch(err => runtime.log(String(err))) },
+    { label: '启动 Antigravity 2.0', click: () => runtime.launchTarget('app').catch(err => runtime.log(String(err))) },
     { type: 'separator' },
     { label: '退出', click: () => { isQuitting = true; app.quit(); } },
   ]);
@@ -176,6 +175,20 @@ function registerIpc(): void {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
     }
   });
+  ipcMain.handle('bridge:startKeeper', async () => {
+    try {
+      const url = await runtime.startKeeper();
+      await shell.openExternal(url);
+      runtime.log(`已打开 Keeper 管理面板 ${url}`);
+      broadcast();
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      runtime.log(message);
+      broadcast();
+      return { ok: false, error: message };
+    }
+  });
   ipcMain.handle('bridge:loginLocal', async () => {
     try {
       await runtime.loginLocalAntigravity();
@@ -217,11 +230,11 @@ function registerIpc(): void {
 app.on('second-instance', () => createWindow());
 
 app.whenReady().then(() => {
-  runtime.start();
-  runtime.onChange = broadcast;
   registerIpc();
   createTray();
   createWindow();
+  runtime.onChange = broadcast;
+  runtime.start();
 });
 
 app.on('window-all-closed', () => {

@@ -90,17 +90,30 @@ export function applyOutboundProxy(
   return next;
 }
 
+const INJECTED_API_KEYS = [
+  'ANTIGRAVITY_API_KEY',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GOOGLE_GEMINI_API_KEY',
+] as const;
+
 export function buildAntigravityChildEnv(opts: {
-  gatewayUrl: string;
+  /** When set, Antigravity talks to the injector. Omit for an official 2.0 launch. */
+  gatewayUrl?: string;
   proxyUrl?: string;
   baseEnv?: NodeJS.ProcessEnv;
 }): NodeJS.ProcessEnv {
   let env = sanitizeSpawnEnv({ ...(opts.baseEnv ?? process.env) });
-  env.CLOUD_CODE_URL = opts.gatewayUrl;
-  env.ANTIGRAVITY_API_KEY = 'agy-bridge-dummy';
-  env.GEMINI_API_KEY = 'agy-bridge-dummy';
-  env.GOOGLE_API_KEY = 'agy-bridge-dummy';
-  env.GOOGLE_GEMINI_API_KEY = 'agy-bridge-dummy';
+  if (opts.gatewayUrl) {
+    env.CLOUD_CODE_URL = opts.gatewayUrl;
+    env.ANTIGRAVITY_API_KEY = 'agy-bridge-dummy';
+    env.GEMINI_API_KEY = 'agy-bridge-dummy';
+    env.GOOGLE_API_KEY = 'agy-bridge-dummy';
+    env.GOOGLE_GEMINI_API_KEY = 'agy-bridge-dummy';
+  } else {
+    delete env.CLOUD_CODE_URL;
+    for (const key of INJECTED_API_KEYS) delete env[key];
+  }
   const proxyUrl = opts.proxyUrl?.trim() || detectSystemProxy(env);
   env = applyOutboundProxy(env, proxyUrl);
   return env;

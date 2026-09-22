@@ -1,12 +1,43 @@
 import type { IncomingMessage } from 'node:http';
 import { ProxyAgent, fetch as undiciFetch, type Dispatcher } from 'undici';
 
-export function readBody(req: IncomingMessage): Promise<string> {
+export class BodyTooLargeError extends Error {
+  readonly code = 'BODY_TOO_LARGE';
+
+  constructor(readonly maxBytes: number) {
+    super(`Request body exceeds the ${maxBytes} byte limit`);
+    this.name = 'BodyTooLargeError';
+  }
+}
+
+export function readBody(req: IncomingMessage, maxBytes = 4 * 1024 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', chunk => chunks.push(Buffer.from(chunk)));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    req.on('error', reject);
+    let size = 0;
+    let settled = false;
+    const fail = (error: Error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    req.on('data', chunk => {
+      if (settled) return;
+      const buffer = Buffer.from(chunk);
+      size += buffer.length;
+      if (size > maxBytes) {
+        req.pause();
+        fail(new BodyTooLargeError(maxBytes));
+        req.resume();
+        return;
+      }
+      chunks.push(buffer);
+    });
+    req.on('end', () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    });
+    req.on('error', error => fail(error));
   });
 }
 
@@ -29,6 +60,6 @@ export function createUpstreamFetch(proxyUrl?: string): UpstreamFetch {
   const dispatcher: Dispatcher = new ProxyAgent(trimmed);
   return (url, init) => {
     if (isLoopbackUrl(url)) return fetch(url, init);
-    return undiciFetch(url, { ...(init as any), dispatcher }) as unknown as Promise<Response>;
+    return undiciFetch(url, { ...(init as any), dispatcher, signal: init?.signal }) as unknown as Promise<Response>;
   };
 }

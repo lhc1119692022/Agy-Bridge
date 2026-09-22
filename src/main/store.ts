@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
-import { DEFAULT_CONFIG, LOCAL_UPSTREAM_ID, type AppConfig, type Upstream } from '../shared/types.js';
+import { DEFAULT_CONFIG, DEFAULT_INJECTOR_PORT, LOCAL_UPSTREAM_ID, type AppConfig, type Upstream } from '../shared/types.js';
 import { getConfigPath } from './paths.js';
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -21,6 +21,9 @@ function mergeConfig(raw: unknown): AppConfig {
   }
   if (typeof raw.proxyEnabled === 'boolean') base.proxyEnabled = raw.proxyEnabled;
   if (typeof raw.proxyUrl === 'string') base.proxyUrl = raw.proxyUrl;
+  if (typeof raw.injectorPort === 'number' && raw.injectorPort >= 0 && raw.injectorPort <= 65535) {
+    base.injectorPort = raw.injectorPort || DEFAULT_INJECTOR_PORT;
+  }
   if (isObject(raw.cliproxy)) {
     if (typeof raw.cliproxy.projectDir === 'string') base.cliproxy.projectDir = raw.cliproxy.projectDir;
     if (typeof raw.cliproxy.binaryPath === 'string') base.cliproxy.binaryPath = raw.cliproxy.binaryPath;

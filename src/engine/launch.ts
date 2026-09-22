@@ -1,5 +1,5 @@
-import { execFileSync, execSync, spawn } from 'node:child_process';
-import { closeSync, constants, existsSync, lstatSync, openSync, readlinkSync } from 'node:fs';
+import { execFile, spawn } from 'node:child_process';
+import { closeSync, constants, existsSync, lstatSync, openSync, readlinkSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { prepareIdeProfile } from './ide-profile.js';
@@ -8,17 +8,72 @@ function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-function runPowerShell(script: string): string {
-  return execSync(`powershell.exe -NoProfile -Command ${JSON.stringify(script)}`, {
-    encoding: 'utf8',
-    stdio: ['pipe', 'pipe', 'pipe'],
-  }).trim();
+function execFileAsync(file: string, args: string[], extra?: { maxBuffer?: number }): Promise<string> {
+  return new Promise(resolve => {
+    execFile(file, args, {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 8000,
+      maxBuffer: extra?.maxBuffer ?? 1024 * 1024,
+    }, (error, stdout) => {
+      if (error) {
+        resolve('');
+        return;
+      }
+      resolve(String(stdout ?? '').trim());
+    });
+  });
+}
+
+function runPowerShell(script: string): Promise<string> {
+  return execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script]);
+}
+
+export function normalizeProfileDir(profileDir: string): string {
+  return profileDir.toLowerCase().replace(/\//g, '\\').replace(/\\+$/, '');
+}
+
+export function sameProfileDir(a: string, b: string): boolean {
+  return normalizeProfileDir(a) === normalizeProfileDir(b);
 }
 
 export function commandLineUsesProfile(commandLine: string, profileDir: string): boolean {
   const cmd = commandLine.toLowerCase().replace(/\//g, '\\');
-  const dir = profileDir.toLowerCase().replace(/\//g, '\\');
-  return cmd.includes(dir);
+  const dir = normalizeProfileDir(profileDir);
+  return dir.length > 0 && cmd.includes(dir);
+}
+
+export function commandLineIsElectronHelper(commandLine: string): boolean {
+  return /--type=/i.test(commandLine);
+}
+
+export function commandLineHasUserDataDir(commandLine: string): boolean {
+  return /--user-data-dir=/i.test(commandLine);
+}
+
+export function commandLineIsAntigravityLanguageServer(commandLine: string): boolean {
+  const cmd = commandLine.toLowerCase().replace(/\//g, '\\');
+  if (!cmd.includes('language_server')) return false;
+  if (cmd.includes('antigravity ide')) return false;
+  return cmd.includes('\\antigravity\\')
+    || cmd.includes('override_ide_name antigravity')
+    || cmd.includes('--app_data_dir antigravity');
+}
+
+/**
+ * Official Antigravity 2.0: default profile, or an explicit official --user-data-dir.
+ * Never matches the isolated injected profile.
+ */
+export function commandLineMatchesOfficialAppProcess(
+  commandLine: string,
+  officialProfileDir: string,
+  isolatedProfileDir: string,
+): boolean {
+  const cmd = commandLine.trim();
+  if (!cmd) return false;
+  if (commandLineUsesProfile(cmd, isolatedProfileDir)) return false;
+  if (commandLineUsesProfile(cmd, officialProfileDir)) return true;
+  return !commandLineIsElectronHelper(cmd) && !commandLineHasUserDataDir(cmd);
 }
 
 function isPidAlive(pid: number): boolean {
@@ -57,49 +112,74 @@ export function isChromiumProfileLocked(profileDir: string): boolean {
   return ['lockfile', 'SingletonLock'].some(name => isLockPathHeld(join(profileDir, name)));
 }
 
-function winIsProcessRunningForProfile(exeName: string, profileDir: string): boolean {
-  if (isChromiumProfileLocked(profileDir)) return true;
+interface ListedProcess {
+  pid: number;
+  commandLine: string;
+}
+
+async function listWinProcesses(exeName: string): Promise<ListedProcess[]> {
+  const escapedName = exeName.replace(/'/g, "''");
   try {
-    const escapedName = exeName.replace(/'/g, "''");
-    const out = runPowerShell(
-      `Get-CimInstance Win32_Process -Filter "Name='${escapedName}'" | Select-Object -ExpandProperty CommandLine`,
+    const out = await runPowerShell(
+      `Get-CimInstance Win32_Process -Filter "Name='${escapedName}'" | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress`,
     );
-    return out.split(/\r?\n/).some(line => commandLineUsesProfile(line, profileDir));
+    if (!out) return [];
+    const parsed = JSON.parse(out) as { ProcessId: number; CommandLine?: string } | Array<{ ProcessId: number; CommandLine?: string }>;
+    const rows = Array.isArray(parsed) ? parsed : [parsed];
+    return rows
+      .map(row => ({ pid: Number(row.ProcessId), commandLine: row.CommandLine ?? '' }))
+      .filter(row => Number.isFinite(row.pid) && row.pid > 0);
   } catch {
-    return false;
+    return [];
   }
 }
 
-function winQuitProcess(exeName: string): void {
-  try {
-    runPowerShell(
-      `Get-Process -Name '${exeName.replace(/\.exe$/i, '')}' -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() }`,
-    );
-  } catch { /* ignore */ }
+async function winPidsMatching(exeName: string, match: (commandLine: string) => boolean): Promise<number[]> {
+  return (await listWinProcesses(exeName))
+    .filter(proc => match(proc.commandLine))
+    .map(proc => proc.pid);
 }
 
-function winForceQuitProcess(exeName: string, profileDir: string): void {
-  try {
-    const escapedDir = profileDir.replace(/'/g, "''");
-    runPowerShell(
-      `Get-CimInstance Win32_Process -Filter "Name='${exeName}'" | Where-Object { $_.CommandLine -like '*--user-data-dir=${escapedDir}*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
-    );
-  } catch { /* ignore */ }
+async function winCloseMainWindows(pids: number[]): Promise<void> {
+  if (pids.length === 0) return;
+  await runPowerShell(
+    `@(${pids.join(',')}) | ForEach-Object { Get-Process -Id $_ -ErrorAction SilentlyContinue | ForEach-Object { [void]$_.CloseMainWindow() } }`,
+  );
 }
 
-function defaultProcessList(): string {
+async function winKillProcessTrees(pids: number[]): Promise<void> {
+  const unique = [...new Set(pids)].filter(pid => Number.isFinite(pid) && pid > 0);
+  await Promise.all(unique.map(async pid => {
+    const out = await execFileAsync('taskkill.exe', ['/PID', String(pid), '/T', '/F']);
+    if (!out) {
+      try { process.kill(pid); } catch { /* already gone */ }
+    }
+  }));
+}
+
+async function defaultProcessList(): Promise<string> {
   const psArgs = process.platform === 'linux'
     ? ['-eo', 'pid=,args=']
     : ['-axo', 'pid=,command='];
   if (process.platform !== 'darwin' && process.platform !== 'linux') return '';
-  try {
-    return execFileSync('ps', psArgs, {
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'ignore'],
-      maxBuffer: 1024 * 1024 * 4,
-    });
-  } catch {
-    return '';
+  return execFileAsync('ps', psArgs, { maxBuffer: 1024 * 1024 * 4 });
+}
+
+async function unixPidsMatching(match: (commandLine: string) => boolean): Promise<number[]> {
+  const pids: number[] = [];
+  for (const line of (await defaultProcessList()).split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const pid = Number.parseInt(trimmed.split(/\s+/)[0] ?? '', 10);
+    if (!Number.isFinite(pid) || pid <= 0) continue;
+    if (match(trimmed)) pids.push(pid);
+  }
+  return pids;
+}
+
+function unixKillPids(pids: number[], signal: NodeJS.Signals): void {
+  for (const pid of pids) {
+    try { process.kill(pid, signal); } catch { /* already gone */ }
   }
 }
 
@@ -112,15 +192,15 @@ function linuxAntigravityBinary(): string | null {
   return candidates.find(candidate => existsSync(candidate)) ?? null;
 }
 
-function linuxKillByProfile(profileDir: string, signal: NodeJS.Signals): void {
-  const output = defaultProcessList();
-  for (const line of output.split('\n')) {
-    if (!line.includes(`--user-data-dir=${profileDir}`)) continue;
-    const pid = Number.parseInt(line.trim().split(/\s+/)[0] ?? '', 10);
-    if (Number.isFinite(pid) && pid > 0) {
-      try { process.kill(pid, signal); } catch { /* already gone */ }
-    }
+export function getOfficialAppProfileDir(): string {
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming');
+    return join(appData, 'Antigravity');
   }
+  if (process.platform === 'darwin') {
+    return join(homedir(), 'Library', 'Application Support', 'Antigravity');
+  }
+  return join(process.env.XDG_CONFIG_HOME?.trim() || join(homedir(), '.config'), 'Antigravity');
 }
 
 export function findAntigravityAppBinary(override = ''): string | null {
@@ -153,27 +233,19 @@ export function findAntigravityIdeBinary(override = ''): string | null {
   return existsSync(homePath) ? homePath : null;
 }
 
-function isRunningOnUnix(profileDir: string, haystack: (line: string) => boolean): boolean {
-  if (isChromiumProfileLocked(profileDir)) return true;
-  return defaultProcessList().split('\n').some(haystack);
-}
-
 export function isAntigravityIdeRunning(profileDir: string): boolean {
-  if (process.platform === 'win32') return winIsProcessRunningForProfile('Antigravity IDE.exe', profileDir);
-  return isRunningOnUnix(profileDir, line => (
-    process.platform === 'linux'
-      ? commandLineUsesProfile(line, profileDir)
-      : line.includes('Antigravity IDE.app') && commandLineUsesProfile(line, profileDir)
-  ));
+  return isChromiumProfileLocked(profileDir);
 }
 
 export function isAntigravityAppRunning(profileDir: string): boolean {
-  if (process.platform === 'win32') return winIsProcessRunningForProfile('Antigravity.exe', profileDir);
-  return isRunningOnUnix(profileDir, line => (
-    process.platform === 'linux'
-      ? commandLineUsesProfile(line, profileDir)
-      : line.includes('Antigravity.app') && commandLineUsesProfile(line, profileDir)
-  ));
+  return isChromiumProfileLocked(profileDir);
+}
+
+export function isOfficialAntigravityAppRunning(
+  officialProfileDir: string,
+  _isolatedProfileDir: string,
+): boolean {
+  return isChromiumProfileLocked(officialProfileDir);
 }
 
 export async function waitForQuit(isRunning: () => boolean, timeoutMs = 5000): Promise<boolean> {
@@ -185,35 +257,170 @@ export async function waitForQuit(isRunning: () => boolean, timeoutMs = 5000): P
   return !isRunning();
 }
 
-export function quitAntigravity(target: 'app' | 'ide', profileDir: string): void {
-  if (process.platform === 'win32') {
-    winQuitProcess(target === 'ide' ? 'Antigravity IDE.exe' : 'Antigravity.exe');
-    return;
-  }
-  if (process.platform === 'linux') {
-    linuxKillByProfile(profileDir, 'SIGTERM');
-    return;
-  }
-  if (process.platform !== 'darwin') return;
-  const appName = target === 'ide' ? 'Antigravity IDE' : 'Antigravity';
-  try {
-    execFileSync('osascript', ['-e', `tell application "${appName}" to quit`], { stdio: ['ignore', 'pipe', 'pipe'] });
-  } catch { /* ignore */ }
+function exeNameFor(target: 'app' | 'ide'): string {
+  return target === 'ide' ? 'Antigravity IDE.exe' : 'Antigravity.exe';
 }
 
-export function forceQuitAntigravity(target: 'app' | 'ide', profileDir: string): void {
+/** Quit only processes that use this profile. Never kills the other Antigravity 2.0 instance. */
+export async function quitAntigravity(target: 'app' | 'ide', profileDir: string): Promise<void> {
+  const match = (commandLine: string) => (
+    !commandLineIsElectronHelper(commandLine) && commandLineUsesProfile(commandLine, profileDir)
+  );
   if (process.platform === 'win32') {
-    winForceQuitProcess(target === 'ide' ? 'Antigravity IDE.exe' : 'Antigravity.exe', profileDir);
+    await winCloseMainWindows(await winPidsMatching(exeNameFor(target), match));
     return;
   }
-  if (process.platform === 'linux') linuxKillByProfile(profileDir, 'SIGKILL');
+  unixKillPids(await unixPidsMatching(match), 'SIGTERM');
+}
+
+export async function forceQuitAntigravity(target: 'app' | 'ide', profileDir: string): Promise<void> {
+  const match = (commandLine: string) => commandLineUsesProfile(commandLine, profileDir);
+  if (process.platform === 'win32') {
+    await winKillProcessTrees(await winPidsMatching(exeNameFor(target), match));
+    return;
+  }
+  unixKillPids(await unixPidsMatching(match), 'SIGKILL');
+}
+
+export async function quitOfficialAntigravityApp(isolatedProfileDir: string, officialProfileDir: string): Promise<void> {
+  const match = (commandLine: string) => (
+    !commandLineIsElectronHelper(commandLine)
+    && commandLineMatchesOfficialAppProcess(commandLine, officialProfileDir, isolatedProfileDir)
+  );
+  if (process.platform === 'win32') {
+    await winCloseMainWindows(await winPidsMatching('Antigravity.exe', match));
+    return;
+  }
+  unixKillPids(await unixPidsMatching(match), 'SIGTERM');
+}
+
+export async function forceQuitOfficialAntigravityApp(isolatedProfileDir: string, officialProfileDir: string): Promise<void> {
+  const match = (commandLine: string) => (
+    commandLineMatchesOfficialAppProcess(commandLine, officialProfileDir, isolatedProfileDir)
+  );
+  if (process.platform === 'win32') {
+    await winKillProcessTrees(await winPidsMatching('Antigravity.exe', match));
+    return;
+  }
+  unixKillPids(await unixPidsMatching(match), 'SIGKILL');
+}
+
+export function clearStaleChromiumSidecars(profileDir: string): void {
+  if (!profileDir || isChromiumProfileLocked(profileDir)) return;
+  for (const name of ['DevToolsActivePort', 'lockfile', 'SingletonLock', 'SingletonSocket', 'SingletonCookie']) {
+    const path = join(profileDir, name);
+    if (!existsSync(path)) continue;
+    if (isLockPathHeld(path)) continue;
+    try { unlinkSync(path); } catch { /* still in use */ }
+  }
+}
+
+async function languageServerPids(): Promise<number[]> {
+  if (process.platform === 'win32') {
+    return winPidsMatching('language_server.exe', commandLineIsAntigravityLanguageServer);
+  }
+  return unixPidsMatching(commandLineIsAntigravityLanguageServer);
+}
+
+async function antigravityExePids(): Promise<number[]> {
+  if (process.platform === 'win32') {
+    return (await listWinProcesses('Antigravity.exe')).map(proc => proc.pid);
+  }
+  return unixPidsMatching(line => /antigravity/i.test(line) && !/antigravity ide/i.test(line));
+}
+
+async function antigravityMainPids(): Promise<number[]> {
+  if (process.platform === 'win32') {
+    return (await listWinProcesses('Antigravity.exe'))
+      .filter(proc => proc.commandLine && !commandLineIsElectronHelper(proc.commandLine))
+      .map(proc => proc.pid);
+  }
+  return unixPidsMatching(line => (
+    /antigravity/i.test(line)
+    && !/antigravity ide/i.test(line)
+    && !commandLineIsElectronHelper(line)
+  ));
+}
+
+async function killPids(pids: number[]): Promise<void> {
+  if (pids.length === 0) return;
+  if (process.platform === 'win32') await winKillProcessTrees(pids);
+  else unixKillPids(pids, 'SIGKILL');
+}
+
+/**
+ * After the window is gone, GPU/crashpad/language_server often remain and block the next Start Menu launch.
+ * Does not kill a live official main window.
+ */
+export async function clearOrphanAntigravityConflicts(isolatedProfileDir: string, officialProfileDir: string): Promise<string[]> {
+  const notes: string[] = [];
+  const isolatedPids = process.platform === 'win32'
+    ? await winPidsMatching('Antigravity.exe', cmd => commandLineUsesProfile(cmd, isolatedProfileDir))
+    : await unixPidsMatching(line => commandLineUsesProfile(line, isolatedProfileDir));
+  if (isolatedPids.length > 0) {
+    await killPids(isolatedPids);
+    notes.push(`cleared isolated Antigravity (${isolatedPids.length})`);
+  }
+  if ((await antigravityMainPids()).length === 0) {
+    const leftovers = [...await antigravityExePids(), ...await languageServerPids()];
+    if (leftovers.length > 0) {
+      await killPids(leftovers);
+      notes.push(`cleared leftover Antigravity occupancy (${leftovers.length})`);
+    }
+    clearStaleChromiumSidecars(officialProfileDir);
+  }
+  clearStaleChromiumSidecars(isolatedProfileDir);
+  return notes;
+}
+
+/** Full stop before launching from Agy Bridge: window, helpers, language_server, stale locks. */
+export async function clearAntigravityLaunchConflicts(officialProfileDir: string, isolatedProfileDir: string): Promise<void> {
+  await quitAntigravity2(officialProfileDir, isolatedProfileDir);
+  const pids = [
+    ...await antigravityExePids(),
+    ...await languageServerPids(),
+  ];
+  if (process.platform === 'win32') await winKillProcessTrees(pids);
+  else unixKillPids(pids, 'SIGKILL');
+  clearStaleChromiumSidecars(isolatedProfileDir);
+  clearStaleChromiumSidecars(officialProfileDir);
 }
 
 export { buildAntigravityChildEnv, detectSystemProxy } from './child-env.js';
 
+export function buildAntigravityLaunchPlan(opts: {
+  target: 'app' | 'ide';
+  profileDir: string;
+  extraArgs?: string[];
+}): { args: string[]; writeIdeIsolatedSettings: boolean } {
+  return {
+    args: [
+      `--user-data-dir=${opts.profileDir}`,
+      '--dns-result-order=ipv4first',
+      ...(opts.extraArgs ?? []),
+    ],
+    writeIdeIsolatedSettings: opts.target === 'ide',
+  };
+}
+
+export function isAntigravity2Running(officialProfileDir: string, isolatedProfileDir: string): boolean {
+  return isChromiumProfileLocked(officialProfileDir)
+    || isChromiumProfileLocked(isolatedProfileDir);
+}
+
+export async function quitAntigravity2(officialProfileDir: string, isolatedProfileDir: string): Promise<void> {
+  await quitOfficialAntigravityApp(isolatedProfileDir, officialProfileDir);
+  await quitAntigravity('app', isolatedProfileDir);
+}
+
+export async function forceQuitAntigravity2(officialProfileDir: string, isolatedProfileDir: string): Promise<void> {
+  await forceQuitOfficialAntigravityApp(isolatedProfileDir, officialProfileDir);
+  await forceQuitAntigravity('app', isolatedProfileDir);
+}
+
 export async function launchAntigravity(opts: {
   target: 'app' | 'ide';
-  gatewayUrl: string;
+  gatewayUrl?: string;
   profileDir: string;
   binaryPath: string;
   env: NodeJS.ProcessEnv;
@@ -230,13 +437,15 @@ export async function launchAntigravity(opts: {
       settle(127);
       return;
     }
-    prepareIdeProfile(opts.profileDir, opts.gatewayUrl);
-    const args = [
-      `--user-data-dir=${opts.profileDir}`,
-      '--dns-result-order=ipv4first',
-      ...(opts.extraArgs ?? []),
-    ];
-    const child = spawn(opts.binaryPath, args, {
+    const plan = buildAntigravityLaunchPlan({
+      target: opts.target,
+      profileDir: opts.profileDir,
+      extraArgs: opts.extraArgs,
+    });
+    if (plan.writeIdeIsolatedSettings && opts.gatewayUrl) {
+      prepareIdeProfile(opts.profileDir, opts.gatewayUrl);
+    }
+    const child = spawn(opts.binaryPath, plan.args, {
       stdio: 'ignore',
       detached: true,
       env: opts.env,

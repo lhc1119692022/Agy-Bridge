@@ -23,6 +23,16 @@ npm test
 
 这会更新 `fetchAvailableModels` fixture 和 slot-registry。`catalog.ts` 若有协议变化需要对照 relay-ai 手工合并。
 
+## 可靠性保护
+
+注入器已吸收 `relay-ai` 近期的几项网关恢复策略：
+
+- 流式上游返回 `200` 但没有任何事件时，默认重试一次非流式请求，并以单条 SSE 事件回放给 Antigravity。
+- 默认仅对网络异常和 `408/425/429/5xx` 瞬时错误重试一次；鉴权、参数和协议错误不会盲目重试。
+- 单次 JSON 请求体默认限制为 4 MiB，超限直接返回 `413`，不会触达上游。
+- 每次转发记录目录模型、真实上游模型、状态码、延迟和重试次数，便于定位“显示模型”和“实际调用模型”不一致的问题。
+- 拉取模型时保留上游返回的 context window；测试统一使用临时配置目录，不会修改真实用户配置。
+
 ## 开发
 
 ```bash
@@ -44,10 +54,13 @@ npm run package:win
 
 1. **上游**：加一个讲 Gemini 原生协议的中转站（Base URL + API Key），点「拉模型」。
 2. **注入器**：选当前上游和要暴露的模型，启动注入器。
-3. **启动 Antigravity IDE / 应用**：会用隔离 profile，并把 `jetski.cloudCodeUrl` 指到注入器。
-4. **本地引擎**：选择已经部署好的 CLIProxyAPI **项目文件夹**（`config.yaml` + `start.cmd`，例如 `D:\CLIProxyAPI`）。启动会打开终端跑 `start.cmd`，和桌面快捷方式一样。不要把自制的 `CLIProxyAPI` 快捷方式当成程序。出站代理用项目自己的 config.yaml。
+3. **Antigravity 2.0**（第一优先级，不是 IDE）：从 **Agy Bridge 窗口**启动才会注入。请先退出已打开的官方窗口再开桥。
+   - 注入器绑在固定端口（默认 `127.0.0.1:19621`）。桥在跑时临时写入官方 `settings.json` 的 `jetski.cloudCodeUrl`；退出桥时删掉。
+   - 从本窗口启动时，代理只加在这一次进程上。
+   - 开始菜单直开容易卡在 Google 登录确认（界面一直黑）。桥会给开始菜单带上你已经开着的系统代理，不改 `Antigravity.exe` 安装包。2.0 若重装快捷方式，再开一次桥会重新挂上。
+4. **本地引擎**：选择已经部署好的 CLIProxyAPI **项目文件夹**（`config.yaml` + `cli-proxy-api`，例如 `D:\CLIProxyAPI`）。从本窗口启动是静默的：同时拉起 CLIProxyAPI 和 Keeper，不自动打开管理页。需要时再点「打开管理页」或「启动 Keeper」。不要把自制的 `CLIProxyAPI` 快捷方式当成程序。出站代理用项目自己的 config.yaml。
 
-系统代理只用于出站。Antigravity 访问 `127.0.0.1` 会走 `NO_PROXY`，不要让本地注入器被代理拐走。
+访问 `127.0.0.1` 走 `NO_PROXY`，不要让本地注入器被代理拐走。
 
 ## 不同步的东西
 

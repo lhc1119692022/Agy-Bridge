@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('agyBridge', {
   detectCliproxy: () => ipcRenderer.invoke('bridge:detectCliproxy'),
   loginLocal: () => ipcRenderer.invoke('bridge:loginLocal'),
   openManagement: () => ipcRenderer.invoke('bridge:openManagement'),
+  startKeeper: () => ipcRenderer.invoke('bridge:startKeeper'),
   launch: (target: AntigravityTarget) => ipcRenderer.invoke('bridge:launch', target),
   pickFile: () => ipcRenderer.invoke('bridge:pickFile') as Promise<string | null>,
   pickFolder: () => ipcRenderer.invoke('bridge:pickFolder') as Promise<string | null>,

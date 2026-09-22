@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeClientKey, parseCliproxyYaml, parseModelList, pickClientKey, projectLooksLikeCliproxy, requireClientKey, windowsConsoleLaunch } from '../src/engine/cliproxy.js';
+import { cliproxySilentLaunch, normalizeClientKey, parseCliproxyYaml, parseModelList, pickClientKey, projectLooksLikeCliproxy, requireClientKey, windowsConsoleLaunch } from '../src/engine/cliproxy.js';
 import { isLoopbackUrl } from '../src/engine/http.js';
 
 describe('CLIProxyAPI helpers', () => {
@@ -36,13 +36,27 @@ debug: false
     })).toEqual([{ id: 'gemini-3-pro', name: 'gemini-3-pro' }]);
   });
 
-  it('opens a new console with start, instead of an empty Electron-attached cmd', () => {
-    const launch = windowsConsoleLaunch('D:\\CLIProxyAPI', 'start.cmd');
+  it('preserves provider context-window metadata when available', () => {
+    expect(parseModelList({
+      models: [{ name: 'models/gemini-3-pro', displayName: 'Pro', inputTokenLimit: 1048576 }],
+    })).toEqual([{ id: 'gemini-3-pro', name: 'Pro', contextWindow: 1048576 }]);
+  });
+
+  it('keeps a visible console only for login, not for starting the engine', () => {
+    const launch = windowsConsoleLaunch('D:\\CLIProxyAPI', '"D:\\CLIProxyAPI\\cli-proxy-api.exe" -antigravity-login');
     expect(launch.args[0]).toBe('/c');
     expect(launch.args[1]).toContain('start "CLIProxyAPI"');
     expect(launch.args[1]).toContain('/D "D:\\CLIProxyAPI"');
-    expect(launch.args[1]).toContain('cmd /k start.cmd');
-    expect(launch.args.join(' ')).not.toMatch(/CLIProxyAPI\.exe/);
+  });
+
+  it('starts CLIProxyAPI hidden without opening a console or management page', () => {
+    const launch = cliproxySilentLaunch('D:\\CLIProxyAPI', 'D:\\CLIProxyAPI\\cli-proxy-api.exe');
+    expect(launch.file).toBe('D:\\CLIProxyAPI\\cli-proxy-api.exe');
+    expect(launch.args).toEqual(['-config', 'D:\\CLIProxyAPI\\config.yaml']);
+    expect(launch.cwd).toBe('D:\\CLIProxyAPI');
+    expect(launch.windowsHide).toBe(true);
+    expect(launch.args.join(' ')).not.toMatch(/start\.cmd/);
+    expect(launch.args.join(' ')).not.toMatch(/management\.html/);
   });
 
   it('uses api-keys from the project yaml and ignores leftover placeholder keys', () => {

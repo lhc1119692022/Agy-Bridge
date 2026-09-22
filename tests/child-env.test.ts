@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyOutboundProxy,
+  buildAntigravityChildEnv,
   parseWindowsInternetProxy,
   parseWindowsProxyServer,
   sanitizeSpawnEnv,
@@ -38,5 +39,31 @@ describe('child env', () => {
     expect(env.HTTPS_PROXY).toBe('http://127.0.0.1:7890');
     expect(env.NO_PROXY).toContain('127.0.0.1');
     expect(env.NO_PROXY).toContain('localhost');
+  });
+
+  it('injects Cloud Code only when a gateway URL is provided', () => {
+    const injected = buildAntigravityChildEnv({
+      gatewayUrl: 'http://127.0.0.1:9',
+      proxyUrl: 'http://127.0.0.1:7890',
+      baseEnv: { PATH: 'C:\\Windows' },
+    });
+    expect(injected.CLOUD_CODE_URL).toBe('http://127.0.0.1:9');
+    expect(injected.ANTIGRAVITY_API_KEY).toBe('agy-bridge-dummy');
+    expect(injected.HTTPS_PROXY).toBe('http://127.0.0.1:7890');
+
+    const official = buildAntigravityChildEnv({
+      proxyUrl: 'http://127.0.0.1:7890',
+      baseEnv: {
+        PATH: 'C:\\Windows',
+        CLOUD_CODE_URL: 'http://127.0.0.1:9',
+        ANTIGRAVITY_API_KEY: 'agy-bridge-dummy',
+        GEMINI_API_KEY: 'agy-bridge-dummy',
+      },
+    });
+    expect(official.CLOUD_CODE_URL).toBeUndefined();
+    expect(official.ANTIGRAVITY_API_KEY).toBeUndefined();
+    expect(official.GEMINI_API_KEY).toBeUndefined();
+    expect(official.HTTPS_PROXY).toBe('http://127.0.0.1:7890');
+    expect(official.NO_PROXY).toContain('127.0.0.1');
   });
 });

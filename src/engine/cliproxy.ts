@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { CliproxySettings } from '../shared/types.js';
 import { sanitizeSpawnEnv } from './child-env.js';
+import { ensureKeeperRunning } from './keeper.js';
 
 export interface CliproxyHandle {
   pid: number | null;
@@ -206,21 +207,51 @@ export function listCliproxyAccounts(authDir?: string): CliproxyAccount[] {
   return accounts;
 }
 
-export function parseModelList(body: unknown): Array<{ id: string; name: string }> {
+export interface ListedModel {
+  id: string;
+  name: string;
+  contextWindow?: number;
+}
+
+function readContextWindow(item: Record<string, unknown>): number | undefined {
+  const candidates = [
+    item.contextWindow,
+    item.contextWindowSize,
+    item.maxContextTokens,
+    item.inputTokenLimit,
+    item.context_window,
+  ];
+  for (const value of candidates) {
+    const number = typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value)
+        : Number.NaN;
+    if (Number.isFinite(number) && number > 0) return Math.floor(number);
+  }
+  return undefined;
+}
+
+export function parseModelList(body: unknown): ListedModel[] {
   if (!body || typeof body !== 'object') return [];
   const record = body as Record<string, unknown>;
   const gemini = Array.isArray(record.models) ? record.models : [];
   const openai = Array.isArray(record.data) ? record.data : [];
   const rows = [...gemini, ...openai];
   const seen = new Set<string>();
-  const models: Array<{ id: string; name: string }> = [];
+  const models: ListedModel[] = [];
   for (const row of rows) {
     if (!row || typeof row !== 'object') continue;
-    const item = row as { id?: unknown; name?: unknown; displayName?: unknown };
+    const item = row as Record<string, unknown>;
     const raw = String(item.id || item.name || '').replace(/^models\//, '');
     if (!raw || seen.has(raw)) continue;
     seen.add(raw);
-    models.push({ id: raw, name: String(item.displayName || raw) });
+    const contextWindow = readContextWindow(item);
+    models.push({
+      id: raw,
+      name: String(item.displayName || raw),
+      ...(contextWindow ? { contextWindow } : {}),
+    });
   }
   return models;
 }
@@ -230,7 +261,7 @@ export async function listGeminiModels(opts: {
   apiKey: string | string[];
   headers?: Record<string, string>;
   fetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
-}): Promise<{ models: Array<{ id: string; name: string }>; apiKey: string }> {
+}): Promise<{ models: ListedModel[]; apiKey: string }> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const keys = (Array.isArray(opts.apiKey) ? opts.apiKey : [opts.apiKey])
     .map(key => normalizeClientKey(key))
@@ -302,6 +333,33 @@ export function windowsConsoleLaunch(projectDir: string, innerCommand: string): 
   };
 }
 
+export function cliproxySilentLaunch(projectDir: string, binary: string, extraArgs: string[] = []): {
+  file: string;
+  args: string[];
+  cwd: string;
+  windowsHide: boolean;
+} {
+  return {
+    file: binary,
+    args: ['-config', join(projectDir, 'config.yaml'), ...extraArgs],
+    cwd: projectDir,
+    windowsHide: true,
+  };
+}
+
+function spawnHidden(launch: { file: string; args: string[]; cwd: string }, log: (msg: string) => void): ChildProcess {
+  log(`[cliproxy] ${launch.file} ${launch.args.join(' ')}`);
+  const child = spawn(launch.file, launch.args, {
+    cwd: launch.cwd,
+    env: sanitizeSpawnEnv({ ...process.env }),
+    stdio: 'ignore',
+    detached: true,
+    windowsHide: true,
+  });
+  child.unref();
+  return child;
+}
+
 function openProjectConsole(projectDir: string, innerCommand: string, log: (msg: string) => void): ChildProcess {
   const launch = windowsConsoleLaunch(projectDir, innerCommand);
   log(`[cliproxy] ${launch.file} ${launch.args.join(' ')}`);
@@ -326,7 +384,7 @@ export async function startCliproxy(opts: {
   if (!projectDir) {
     throw new Error('未找到 CLIProxyAPI 项目文件夹。请选择包含 config.yaml 和 start.cmd 的目录，例如 D:\\CLIProxyAPI。');
   }
-  const startScript = findStartScript(projectDir);
+  const binary = findBinaryInProject(projectDir);
   const port = opts.settings.port || portFromBaseUrl(opts.settings.baseUrl) || 8317;
   const url = `http://127.0.0.1:${port}`;
   const authDir = resolveAuthDir(opts.settings.authDir);
@@ -337,19 +395,25 @@ export async function startCliproxy(opts: {
   log(`[cliproxy] auth-dir ${authDir}，账号 ${accounts.length} 个`);
 
   try {
+    await ensureKeeperRunning({ projectDir, logFn: log });
+  } catch (err) {
+    log(`[cliproxy] Keeper 未同步拉起：${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  try {
     await waitForServer(`${url}/v1/models`, 800);
     log(`[cliproxy] 复用已在 ${url} 监听的实例`);
     return { pid: null, url, reused: true, stop: async () => { stopRealProcess(); } };
   } catch {
-    /* spawn via start.cmd so a terminal stays open, same as the desktop shortcut */
+    /* spawn the binary hidden; do not open the management page */
   }
 
-  if (!startScript) {
-    throw new Error(`项目文件夹里没有 start.cmd：${projectDir}。请用原项目的 start.cmd 启动，不要用自制的 CLIProxyAPI 快捷方式当程序。`);
+  if (!binary) {
+    throw new Error(`项目文件夹里没有 cli-proxy-api：${projectDir}。请选择包含 config.yaml 和原项目二进制的目录。`);
   }
 
-  log(`[cliproxy] 新开终端运行 start.cmd`);
-  const child = openProjectConsole(projectDir, 'start.cmd', log);
+  log(`[cliproxy] 静默启动，不打开管理页`);
+  const child = spawnHidden(cliproxySilentLaunch(projectDir, binary, opts.settings.extraArgs), log);
 
   try {
     await waitForServer(`${url}/v1/models`, 20000);

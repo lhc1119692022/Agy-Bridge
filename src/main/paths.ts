@@ -28,3 +28,15 @@ export function getIdeProfileDir(): string {
 export function getCliproxyConfigPath(): string {
   return join(getAppHome(), 'cliproxy.yaml');
 }
+
+export function getCloudCodeBackupPath(): string {
+  return join(getAppHome(), 'cloudcode-backup.json');
+}
+
+export function getLaunchCmdPath(): string {
+  return join(getAppHome(), 'launch-antigravity.cmd');
+}
+
+export function getLaunchPs1Path(): string {
+  return join(getAppHome(), 'launch-antigravity.ps1');
+}

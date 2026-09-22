@@ -13,9 +13,10 @@
       <img class="brand-logo" src="./logo.png" alt="Agy Bridge" />
       <div>
         <strong>Agy Bridge</strong>
-        <span>注入器 + 本地中转站</span>
+        <span>Antigravity 2.0 注入器</span>
       </div>
     </div>
+    <div class="status-board" id="aside-status"></div>
     <nav>
       <button type="button" data-view="upstreams" class="active">上游</button>
       <button type="button" data-view="inject">注入器</button>
@@ -23,7 +24,11 @@
       <button type="button" data-view="settings">设置</button>
       <button type="button" data-view="logs">日志</button>
     </nav>
-    <div class="status-board" id="aside-status"></div>
+    <div class="aside-actions">
+      <button type="button" id="aside-launch-app">启动 Antigravity</button>
+      <button type="button" id="aside-cliproxy">启动 CLIProxyAPI</button>
+      <button type="button" id="aside-injector" class="primary">启动注入器</button>
+    </div>
   </aside>
   <main>
     <section id="view-upstreams" class="view">
@@ -41,27 +46,46 @@
       <header class="page-header">
         <div>
           <h1>注入器</h1>
-          <p>勾选模型后，用右侧队列调整 Antigravity 里的显示顺序。</p>
+          <p>从本窗口启动才会注入。请先退出已打开的官方窗口。开始菜单直开会带上系统代理，避免卡在 Google 登录确认。</p>
         </div>
-        <div class="row">
-          <button type="button" id="start-injector" class="primary">启动注入器</button>
-          <button type="button" id="stop-injector">停止注入器</button>
+        <div class="header-actions">
+          <button type="button" id="toggle-injector" class="primary">启动注入器</button>
+          <button type="button" id="launch-app">启动 Antigravity</button>
         </div>
       </header>
-      <div id="inject-panel"></div>
+      <div id="inject-panel" class="inject-layout">
+        <div class="panel slot-meter">
+          <div class="slot-meter-head">
+            <strong id="slot-label">槽位 0 / 6</strong>
+            <div id="slot-dots" class="slot-dots"></div>
+            <span class="hint" id="slot-hint">注入器未启动</span>
+          </div>
+        </div>
+        <div class="model-grid">
+          <section class="panel list-panel">
+            <div class="field-head"><span>注入队列</span><span class="hint">上 / 下</span></div>
+            <div class="queue" id="inject-queue"></div>
+          </section>
+          <section class="panel list-panel">
+            <div class="field-head"><span>上游模型</span><span class="hint" id="catalog-count">0 个</span></div>
+            <input id="catalog-query" placeholder="搜索模型 ID" />
+            <div class="catalog" id="inject-catalog"></div>
+          </section>
+        </div>
+      </div>
     </section>
 
     <section id="view-local" class="view hidden">
       <header class="page-header">
         <div>
           <h1>本地引擎</h1>
-          <p>你只需提供项目文件夹。中转站 URL 和客户端 Key 会从该目录的 config.yaml 自动读取；管理端登录仍在 CLIProxyAPI 自己的页面里。</p>
+          <p>你只需提供项目文件夹。中转站 URL 和客户端 Key 会从该目录的 config.yaml 自动读取。从本窗口启动 CLIProxyAPI 是静默的，不会自动打开管理页。</p>
         </div>
       </header>
-      <div class="model-grid">
+      <div class="local-stack">
         <div class="panel form">
           <div class="field-head"><span>管理 CLIProxyAPI</span></div>
-          <p class="hint">启动服务、登录管理页、添加账号。这里用的是管理密钥，不是下面的客户端 Key。</p>
+          <p class="hint">启动会同时静默拉起 Keeper。管理端登录仍在 CLIProxyAPI 自己的页面里，需要时再点「打开管理页」。这里用的是管理密钥，不是客户端 Key。</p>
           <div id="cliproxy-accounts"></div>
           <label>项目文件夹
             <div class="row">
@@ -71,20 +95,25 @@
             </div>
           </label>
           <p class="hint" id="cliproxy-detected"></p>
+          <p id="cliproxy-usage" class="meta"></p>
           <div class="row wrap">
             <button type="button" id="start-local" class="primary">启动 CLIProxyAPI</button>
             <button type="button" id="stop-local">停止</button>
             <button type="button" id="open-management">打开管理页</button>
             <button type="button" id="login-local">添加 Antigravity 账号</button>
+            <button type="button" id="save-cliproxy">拉模型</button>
           </div>
         </div>
         <div class="panel form">
-          <div class="field-head"><span>作为中转站使用</span></div>
-          <p class="hint">URL 和客户端 Key 来自项目 config.yaml 的 port / api-keys，不会使用管理端密码。</p>
-          <p id="cliproxy-usage" class="meta"></p>
+          <div class="field-head"><span>CPA Usage Keeper</span><span class="hint" id="keeper-status">未检测</span></div>
+          <p class="hint">启动 Keeper 会在浏览器打开管理面板。启动 CLIProxyAPI 时只会后台拉起，不会自动打开这个面板。</p>
           <div class="row wrap">
-            <button type="button" id="save-cliproxy" class="primary">拉模型</button>
+            <button type="button" id="start-keeper" class="primary">启动 Keeper</button>
           </div>
+        </div>
+        <div class="panel keeper-log">
+          <div class="field-head"><span>Keeper 请求事件</span><span class="hint" id="keeper-events-hint">等待同步</span></div>
+          <div id="keeper-events" class="event-log"></div>
         </div>
       </div>
     </section>
@@ -93,7 +122,7 @@
       <header class="page-header">
         <div>
           <h1>设置</h1>
-          <p>系统代理用于 Antigravity 刷新 Google OAuth。不填则自动读取 Windows「系统代理」。127.0.0.1 不会走代理。</p>
+          <p>系统代理会写进 Antigravity 2.0 进程环境，供 language server 刷新 Google OAuth。不填则读取 Windows「系统代理」。127.0.0.1 不会走代理。</p>
         </div>
       </header>
       <div class="panel form">
@@ -105,13 +134,17 @@
             <button type="button" id="pick-ide">浏览</button>
           </div>
         </label>
-        <label>Antigravity 应用路径（可空，自动检测）
+        <label>Antigravity 2.0 路径（可空，自动检测）
           <div class="row">
             <input id="app-path" />
             <button type="button" id="pick-app">浏览</button>
           </div>
         </label>
-        <button type="button" id="save-settings" class="primary">保存设置</button>
+        <p class="hint">IDE 不是默认入口。只有你明确需要时才从这里启动。</p>
+        <div class="row wrap">
+          <button type="button" id="save-settings" class="primary">保存设置</button>
+          <button type="button" id="launch-ide">启动 Antigravity IDE</button>
+        </div>
       </div>
     </section>
 

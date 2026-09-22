@@ -48,11 +48,36 @@ export interface CliproxyInfo {
   clientKeyCount: number;
 }
 
+export interface KeeperEvent {
+  id: string;
+  timestamp: string;
+  model: string;
+  source: string;
+  endpoint: string;
+  failed: boolean;
+  latencyMs: number;
+  totalTokens: number;
+  costUsd: number;
+}
+
+export interface KeeperInfo {
+  found: boolean;
+  running: boolean;
+  url: string | null;
+  dashboardUrl: string | null;
+  error: string | null;
+  events: KeeperEvent[];
+  eventsError: string | null;
+  totalCount: number;
+}
+
 export interface AntigravitySettings {
   appPath: string;
   idePath: string;
   target: AntigravityTarget;
 }
+
+export const DEFAULT_INJECTOR_PORT = 19621;
 
 export interface AppConfig {
   upstreams: Upstream[];
@@ -60,6 +85,7 @@ export interface AppConfig {
   selectedModelIds: string[];
   proxyEnabled: boolean;
   proxyUrl: string;
+  injectorPort: number;
   cliproxy: CliproxySettings;
   antigravity: AntigravitySettings;
 }
@@ -79,8 +105,14 @@ export interface EngineStatus {
   };
   antigravity: {
     running: boolean;
+    injected: boolean;
     target: AntigravityTarget;
     found: boolean;
+  };
+  keeper: {
+    running: boolean;
+    url: string | null;
+    error: string | null;
   };
 }
 
@@ -90,7 +122,19 @@ export interface AppState {
   logs: string[];
   slotCap: number;
   cliproxy: CliproxyInfo;
+  keeper: KeeperInfo;
 }
+
+export const EMPTY_KEEPER_INFO: KeeperInfo = {
+  found: false,
+  running: false,
+  url: null,
+  dashboardUrl: null,
+  error: null,
+  events: [],
+  eventsError: null,
+  totalCount: 0,
+};
 
 export const LOCAL_UPSTREAM_ID = 'local-cliproxy';
 
@@ -100,6 +144,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   selectedModelIds: [],
   proxyEnabled: false,
   proxyUrl: '',
+  injectorPort: DEFAULT_INJECTOR_PORT,
   cliproxy: {
     projectDir: '',
     binaryPath: '',
